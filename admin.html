@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Панель адміністратора QR-Меню (Cloud)</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>📊 Хмарне управління QR-меню</h1>
+        
+        <div class="card" style="margin-bottom: 20px; text-align: center;">
+            <h2>🔑 Крок 1: Введіть унікальний ID вашого закладу</h2>
+            <div style="display: flex; gap: 10px; max-width: 500px; margin: 0 auto;">
+                <input type="text" id="restaurantId" placeholder="Наприклад: peperoni, kava_space, test_cafe" style="margin: 0;">
+                <button id="loadCafeBtn" style="width: auto; white-space: nowrap;">Завантажити дані</button>
+            </div>
+            <p id="statusMessage" style="color: gray; margin-top: 10px; font-weight: bold;">Заклад не обрано. Введіть ID вище.</p>
+        </div>
+
+        <div class="grid" id="mainWorkspace" style="opacity: 0.4; pointer-events: none; transition: 0.3s;">
+            <div class="card">
+                <h2>Додати страву</h2>
+                <form id="dishForm">
+                    <label>Назва страви:</label>
+                    <input type="text" id="dishName" required placeholder="Наприклад: Борщ">
+                    
+                    <label>Ціна (грн):</label>
+                    <input type="number" id="dishPrice" required placeholder="120">
+                    
+                    <label>Категорія:</label>
+                    <select id="dishCategory">
+                        <option value="Перші страви">Перші страви</option>
+                        <option value="Основні страви">Основні страви</option>
+                        <option value="Напої">Напої</option>
+                    </select>
+                    
+                    <button type="submit">Зберегти страву</button>
+                </form>
+            </div>
+
+            <div class="card central">
+                <h2>Ваш QR-Код меню</h2>
+                <div id="qrContainer">
+                    <p>QR-код генерується для обраного ID</p>
+                </div>
+                <button id="refreshQrBtn">Оновити QR-код</button>
+            </div>
+
+            <div class="card">
+                <h2>📈 Аналітика закладу</h2>
+                <p>Загальна кількість переглядів меню: <strong id="totalViews">0</strong></p>
+                <h3>Популярність страв (Лайки):</h3>
+                <ul id="analyticsList"></ul>
+            </div>
+        </div>
+
+        <div class="card" id="menuListCard" style="margin-top: 20px; opacity: 0.4; pointer-events: none;">
+            <h2>Поточне меню в хмарі Firestore</h2>
+            <div id="menuList"></div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getFirestore, doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        // Заміни ці дані своїми з консолі Firebase!
+        const firebaseConfig = {
+         apiKey: "AIzaSyCf73h_b6e3DG7IOyoLlSPKIYWIik0AJ3c",
+         authDomain: "qr-menu-d8533.firebaseapp.com",
+         projectId: "qr-menu-d8533",
+         storageBucket: "qr-menu-d8533.firebasestorage.app",
+         messagingSenderId: "473646323560",
+         appId: "1:473646323560:web:845e3cc7be04b24b9868dd",
+         measurementId: "G-SP6912944V"
+         };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        let currentId = "";
+        let currentData = { menu: [], views: 0, likes: {} };
+
+        const loadCafeBtn = document.getElementById('loadCafeBtn');
+        const mainWorkspace = document.getElementById('mainWorkspace');
+        const menuListCard = document.getElementById('menuListCard');
+        const statusMessage = document.getElementById('statusMessage');
+        const dishForm = document.getElementById('dishForm');
+
+        // Логіка підключення до конкретного ID закладу
+        loadCafeBtn.addEventListener('click', async () => {
+            const inputId = document.getElementById('restaurantId').value.trim().toLowerCase();
+            if (!inputId) return alert('Будь ласка, введіть ID');
+
+            currentId = inputId;
+            statusMessage.innerText = `🔄 Завантаження даних для закладу "${currentId}"...`;
+            statusMessage.style.color = "orange";
+
+            const docRef = doc(db, "restaurants", currentId);
+            const docSnap = await getDoc(docRef);
+
+            if (docSnap.exists()) {
+                currentData = docSnap.data();
+                statusMessage.innerText = `🟢 Успішно підключено до закладу: "${currentId}"`;
+                statusMessage.style.color = "green";
+            } else {
+                // Якщо такого закладу немає в базі, створюємо новий порожній запис
+                currentData = { menu: [], views: 0, likes: {} };
+                await setDoc(docRef, currentData);
+                statusMessage.innerText = `✨ Створено новий заклад з ID: "${currentId}"`;
+                statusMessage.style.color = "blue";
+            }
+
+            // Активуємо робочу зону
+            mainWorkspace.style.opacity = "1";
+            mainWorkspace.style.pointerEvents = "auto";
+            menuListCard.style.opacity = "1";
+            menuListCard.style.pointerEvents = "auto";
+
+            renderAdminMenu();
+            generateQR();
+            renderAnalytics();
+        });
+
+        // Відображення страв
+        function renderAdminMenu() {
+            const menuList = document.getElementById('menuList');
+            menuList.innerHTML = '';
+
+            if (!currentData.menu || currentData.menu.length === 0) {
+                menuList.innerHTML = '<p>Меню закладу поки що порожнє.</p>';
+                return;
+            }
+
+            currentData.menu.forEach((dish, index) => {
+                const item = document.createElement('div');
+                item.className = 'menu-item-admin';
+                item.innerHTML = `
+                    <span><strong>${dish.category}</strong>: ${dish.name} - ${dish.price} грн</span>
+                    <button class="btn-delete" data-index="${index}">Видалити</button>
+                `;
+                menuList.appendChild(item);
+            });
+
+            // Навішуємо події видалення
+            document.querySelectorAll('.btn-delete').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    const idx = e.target.getAttribute('data-index');
+                    currentData.menu.splice(idx, 1);
+                    await updateDoc(doc(db, "restaurants", currentId), { menu: currentData.menu });
+                    renderAdminMenu();
+                });
+            });
+        }
+
+        // Додавання страви
+        dishForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const name = document.getElementById('dishName').value;
+            const price = document.getElementById('dishPrice').value;
+            const category = document.getElementById('dishCategory').value;
+
+            currentData.menu.push({ name, price, category });
+            await updateDoc(doc(db, "restaurants", currentId), { menu: currentData.menu });
+            
+            dishForm.reset();
+            renderAdminMenu();
+        });
+
+        // Генерація QR-коду з URL-параметром ?id=
+        function generateQR() {
+            const qrContainer = document.getElementById('qrContainer');
+            const currentUrl = window.location.href.replace('admin.html', `menu.html?id=${currentId}`);
+            
+            qrContainer.innerHTML = `
+                <img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(currentUrl)}" alt="QR Code">
+                <p style="font-size:11px; color: green; margin-top:5px; word-break: break-all;">Посиланя: ${currentUrl}</p>
+            `;
+        }
+        document.getElementById('refreshQrBtn').addEventListener('click', generateQR);
+
+        // Відображення аналітики
+        function renderAnalytics() {
+            document.getElementById('totalViews').innerText = currentData.views || 0;
+            const analyticsList = document.getElementById('analyticsList');
+            analyticsList.innerHTML = '';
+
+            if (currentData.likes) {
+                for (const [dishName, likesCount] of Object.entries(currentData.likes)) {
+                    const li = document.createElement('li');
+                    li.innerHTML = `❤️ ${dishName}: <strong>${likesCount}</strong> інтересів`;
+                    analyticsList.appendChild(li);
+                }
+            }
+        }
+    </script>
+</body>
+</html>

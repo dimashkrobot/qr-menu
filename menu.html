@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Цифрове меню закладу</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="client-body">
+    <div class="mobile-container">
+        <header class="menu-header">
+            <h1 id="cafeTitle">✨ Наше Онлайн-Меню</h1>
+            <p>Смачні страви за секунду</p>
+        </header>
+
+        <div id="clientMenuContainer">
+            <p style="text-align:center; padding: 20px;">Завантаження меню з хмари...</p>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getFirestore, doc, getDoc, updateDoc, increment } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        // Повинно бути точно таким же, як і в admin.html
+        const firebaseConfig = {
+         apiKey: "AIzaSyCf73h_b6e3DG7IOyoLlSPKIYWIik0AJ3c",
+         authDomain: "qr-menu-d8533.firebaseapp.com",
+         projectId: "qr-menu-d8533",
+         storageBucket: "qr-menu-d8533.firebasestorage.app",
+         messagingSenderId: "473646323560",
+         appId: "1:473646323560:web:845e3cc7be04b24b9868dd",
+         measurementId: "G-SP6912944V"
+         };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        // 1. Отримуємо ID закладу з URL-параметру (?id=peperoni)
+        const urlParams = new URLSearchParams(window.location.search);
+        const restaurantId = urlParams.get('id');
+        const container = document.getElementById('clientMenuContainer');
+
+        if (!restaurantId) {
+            container.innerHTML = '<p style="text-align:center; padding: 20px; color: red; font-weight: bold;">Помилка: Не вказано ID закладу в URL (наприклад, ?id=cafe1)</p>';
+        } else {
+            document.getElementById('cafeTitle').innerText = `✨ Меню: ${restaurantId.toUpperCase()}`;
+            initMenu();
+        }
+
+        async function initMenu() {
+            const docRef = doc(db, "restaurants", restaurantId);
+            
+            // 2. Фіксуємо перегляд в аналітиці хмари (атомарний інкремент +1)
+            await updateDoc(docRef, { views: increment(1) }).catch(() => {});
+
+            // 3. Завантажуємо дані меню
+            const docSnap = await getDoc(docRef);
+
+            if (!docSnap.exists()) {
+                container.innerHTML = '<p style="text-align:center; padding: 20px;">Заклад не знайдено в базі даних.</p>';
+                return;
+            }
+
+            const data = docSnap.data();
+            renderClientMenu(data.menu || []);
+        }
+
+        function renderClientMenu(menu) {
+            container.innerHTML = '';
+
+            if (menu.length === 0) {
+                container.innerHTML = '<p style="text-align:center; padding: 20px;">Власник ще не додав жодної страви.</p>';
+                return;
+            }
+
+            const categories = [...new Set(menu.map(item => item.category))];
+
+            categories.forEach(category => {
+                const categorySection = document.createElement('div');
+                categorySection.innerHTML = `<h2 class="category-title">${category}</h2>`;
+                
+                const filteredDishes = menu.filter(item => item.category === category);
+                
+                filteredDishes.forEach(dish => {
+                    const card = document.createElement('div');
+                    card.className = 'client-dish-card';
+                    card.innerHTML = `
+                        <div class="dish-info">
+                            <h3>${dish.name}</h3>
+                            <span class="price">${dish.price} грн</span>
+                        </div>
+                        <button class="like-btn" data-dish="${dish.name}">❤️ В обране</button>
+                    `;
+                    categorySection.appendChild(card);
+                });
+
+                container.appendChild(categorySection);
+            });
+
+            // Логіка для кнопок "Лайк" (Аналітика інтересу)
+            document.querySelectorAll('.like-btn').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    const dishName = e.target.getAttribute('data-dish');
+                    const docRef = doc(db, "restaurants", restaurantId);
+                    
+                    // Динамічно оновлюємо поле в хмарному об'єкті likes
+                    const updateField = {};
+                    updateField[`likes.${dishName}`] = increment(1);
+                    await updateDoc(docRef, updateField);
+
+                    alert(`Ви додали "${dishName}" в обране!`);
+                });
+            });
+        }
+    </script>
+</body>
+</html>
