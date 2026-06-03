@@ -191,14 +191,23 @@
             }
         });
 
-        // Генерація QR-коду
+        
+        // Розумна генерація QR-коду, яка працює на будь-якому хостингу
         function generateQR() {
             const qrContainer = document.getElementById('qrContainer');
-            const currentUrl = window.location.href.replace('admin.html', `menu.html?id=${currentId}`);
+            
+            // Очищаємо шлях від "admin.html" або просто "admin", якщо хостинг його сховав
+            let basePath = window.location.pathname.replace(/admin\.html$|admin$/, '');
+            
+            // Перевіряємо, щоб шлях закінчувався на слеш /
+            if (!basePath.endsWith('/')) basePath += '/';
+            
+            // Збираємо точне посилання на клієнтське меню
+            const currentUrl = `${window.location.origin}${basePath}menu.html?id=${currentId}`;
             
             qrContainer.innerHTML = `
                 <img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(currentUrl)}" alt="QR Code">
-                <p style="font-size:11px; color: green; margin-top:5px; word-break: break-all;">Посилання: ${currentUrl}</p>
+                <p style="font-size:11px; color: green; margin-top:5px; word-break: break-all;">Посилання: <a href="${currentUrl}" target="_blank">${currentUrl}</a></p>
             `;
         }
         document.getElementById('refreshQrBtn').addEventListener('click', generateQR);
