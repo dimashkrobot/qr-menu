@@ -63,10 +63,10 @@
     </div>
 
     <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getFirestore, doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
+        import { getFirestore, doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-analytics.js";
 
-        // Заміни ці дані своїми з консолі Firebase!
+        // ⚠️ ОБОВ'ЯЗКОВО ЗАМІНИ ЦІ ДАНІ СВОЇМИ З КОНСОЛІ FIREBASE!
         const firebaseConfig = {
          apiKey: "AIzaSyCf73h_b6e3DG7IOyoLlSPKIYWIik0AJ3c",
          authDomain: "qr-menu-d8533.firebaseapp.com",
@@ -75,7 +75,7 @@
          messagingSenderId: "473646323560",
          appId: "1:473646323560:web:845e3cc7be04b24b9868dd",
          measurementId: "G-SP6912944V"
-         };
+      };
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
@@ -89,39 +89,52 @@
         const statusMessage = document.getElementById('statusMessage');
         const dishForm = document.getElementById('dishForm');
 
-        // Логіка підключення до конкретного ID закладу
+        // Логіка підключення та автоматичного створення
         loadCafeBtn.addEventListener('click', async () => {
             const inputId = document.getElementById('restaurantId').value.trim().toLowerCase();
             if (!inputId) return alert('Будь ласка, введіть ID');
 
             currentId = inputId;
-            statusMessage.innerText = `🔄 Завантаження даних для закладу "${currentId}"...`;
+            statusMessage.innerText = `🔄 З'єднання з хмарою для закладу "${currentId}"...`;
             statusMessage.style.color = "orange";
 
-            const docRef = doc(db, "restaurants", currentId);
-            const docSnap = await getDoc(docRef);
+            try {
+                const docRef = doc(db, "restaurants", currentId);
+                const docSnap = await getDoc(docRef);
 
-            if (docSnap.exists()) {
-                currentData = docSnap.data();
-                statusMessage.innerText = `🟢 Успішно підключено до закладу: "${currentId}"`;
-                statusMessage.style.color = "green";
-            } else {
-                // Якщо такого закладу немає в базі, створюємо новий порожній запис
-                currentData = { menu: [], views: 0, likes: {} };
-                await setDoc(docRef, currentData);
-                statusMessage.innerText = `✨ Створено новий заклад з ID: "${currentId}"`;
-                statusMessage.style.color = "blue";
+                if (docSnap.exists()) {
+                    currentData = docSnap.data();
+                    statusMessage.innerText = `🟢 Дані закладу "${currentId}" успішно завантажено з хмари!`;
+                    statusMessage.style.color = "green";
+                } else {
+                    // ЯКЩО ЗАКЛАДУ НЕМАЄ — СТВОРЮЄМО ЙОГО АВТОМАТИЧНО
+                    currentData = { menu: [], views: 0, likes: {} };
+                    await setDoc(docRef, currentData);
+                    statusMessage.innerText = `✨ Заклад "${currentId}" не знайдено. Автоматично створено новий профіль у хмарі!`;
+                    statusMessage.style.color = "blue";
+                }
+
+                // АКТИВУЄМО РОБОЧУ ЗОНУ (прибираємо розмиття)
+                mainWorkspace.style.opacity = "1";
+                mainWorkspace.style.pointerEvents = "auto";
+                menuListCard.style.opacity = "1";
+                menuListCard.style.pointerEvents = "auto";
+
+                renderAdminMenu();
+                generateQR();
+                renderAnalytics();
+
+            } catch (error) {
+                console.error("Помилка Firebase:", error);
+                statusMessage.innerText = `🔴 Помилка хмари: ${error.message}. Перевірте ключі в коді або правила (Rules) в Firestore!`;
+                statusMessage.style.color = "red";
+                
+                // Деактивуємо інтерфейс у разі помилки
+                mainWorkspace.style.opacity = "0.4";
+                mainWorkspace.style.pointerEvents = "none";
+                menuListCard.style.opacity = "0.4";
+                menuListCard.style.pointerEvents = "none";
             }
-
-            // Активуємо робочу зону
-            mainWorkspace.style.opacity = "1";
-            mainWorkspace.style.pointerEvents = "auto";
-            menuListCard.style.opacity = "1";
-            menuListCard.style.pointerEvents = "auto";
-
-            renderAdminMenu();
-            generateQR();
-            renderAnalytics();
         });
 
         // Відображення страв
@@ -144,13 +157,16 @@
                 menuList.appendChild(item);
             });
 
-            // Навішуємо події видалення
             document.querySelectorAll('.btn-delete').forEach(btn => {
                 btn.addEventListener('click', async (e) => {
                     const idx = e.target.getAttribute('data-index');
                     currentData.menu.splice(idx, 1);
-                    await updateDoc(doc(db, "restaurants", currentId), { menu: currentData.menu });
-                    renderAdminMenu();
+                    try {
+                        await updateDoc(doc(db, "restaurants", currentId), { menu: currentData.menu });
+                        renderAdminMenu();
+                    } catch (err) {
+                        alert("Не вдалося видалити страву: " + err.message);
+                    }
                 });
             });
         }
@@ -162,21 +178,27 @@
             const price = document.getElementById('dishPrice').value;
             const category = document.getElementById('dishCategory').value;
 
+            if(!currentData.menu) currentData.menu = [];
             currentData.menu.push({ name, price, category });
-            await updateDoc(doc(db, "restaurants", currentId), { menu: currentData.menu });
             
-            dishForm.reset();
-            renderAdminMenu();
+            try {
+                await updateDoc(doc(db, "restaurants", currentId), { menu: currentData.menu });
+                dishForm.reset();
+                renderAdminMenu();
+                generateQR();
+            } catch (err) {
+                alert("Не вдалося зберегти страву в хмару: " + err.message);
+            }
         });
 
-        // Генерація QR-коду з URL-параметром ?id=
+        // Генерація QR-коду
         function generateQR() {
             const qrContainer = document.getElementById('qrContainer');
             const currentUrl = window.location.href.replace('admin.html', `menu.html?id=${currentId}`);
             
             qrContainer.innerHTML = `
                 <img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(currentUrl)}" alt="QR Code">
-                <p style="font-size:11px; color: green; margin-top:5px; word-break: break-all;">Посиланя: ${currentUrl}</p>
+                <p style="font-size:11px; color: green; margin-top:5px; word-break: break-all;">Посилання: ${currentUrl}</p>
             `;
         }
         document.getElementById('refreshQrBtn').addEventListener('click', generateQR);

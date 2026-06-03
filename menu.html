@@ -19,8 +19,8 @@
     </div>
 
     <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getFirestore, doc, getDoc, updateDoc, increment } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
+        import { getFirestore, doc, getDoc, updateDoc, increment } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-analytics.js";
 
         // Повинно бути точно таким же, як і в admin.html
         const firebaseConfig = {
@@ -31,7 +31,7 @@
          messagingSenderId: "473646323560",
          appId: "1:473646323560:web:845e3cc7be04b24b9868dd",
          measurementId: "G-SP6912944V"
-         };
+      };
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
